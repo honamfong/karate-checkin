@@ -11,7 +11,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
-    <!-- Firebase SDK -->
+    <!-- Firebase SDK (使用兼容模式以確保穩定) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -20,11 +20,11 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useRef } = React;
 
         // --- Firebase 配置 ---
         const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'karate-attendance-cloud';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'karate-attendance-v2';
 
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
@@ -37,7 +37,7 @@
             '1級', '2級', '3級', '4級', '5級', '6級', '7級', '8級', '9級', '10級'
         ];
 
-        // 完整初始名單
+        // 完整初始名單 (130+ 人)
         const initialStudents = [
             {name: "梁伯偉", belt: "7段"}, {name: "黃家棟", belt: "7段"}, {name: "莫啟超", belt: "6段"},
             {name: "黃穎欣", belt: "6段"}, {name: "方浩南", belt: "6段"}, {name: "黃梅芳", belt: "6段"},
@@ -97,7 +97,7 @@
             const [isMobileMode, setIsMobileMode] = useState(false);
             const [students, setStudents] = useState([]);
             const [loading, setLoading] = useState(true);
-            const [isInitializing, setIsInitializing] = useState(false);
+            const [syncMessage, setSyncMessage] = useState('正在初始化...');
             
             const [newName, setNewName] = useState('');
             const [newBelt, setNewBelt] = useState('10級');
@@ -106,18 +106,25 @@
             const [showAll, setShowAll] = useState(true);
             const [showAddModal, setShowAddModal] = useState(false);
 
+            // 防止重複觸發導入
+            const initStarted = useRef(false);
+
             useEffect(() => {
                 const params = new URLSearchParams(window.location.search);
                 if (params.get('mode') === 'checkin') setIsMobileMode(true);
 
                 const initAuth = async () => {
                     try {
+                        setSyncMessage("正在連線至雲端伺服器...");
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             await auth.signInWithCustomToken(__initial_auth_token);
                         } else {
                             await auth.signInAnonymously();
                         }
-                    } catch (e) { console.error("Auth Error:", e); }
+                    } catch (e) { 
+                        console.error("Auth Error:", e);
+                        setSyncMessage("連線錯誤，請刷新網頁。");
+                    }
                 };
                 initAuth();
 
@@ -125,7 +132,6 @@
                 return () => unsubscribe();
             }, []);
 
-            // 數據監聽與初始名單導入
             useEffect(() => {
                 if (!user) return;
                 
@@ -134,23 +140,28 @@
                 const unsubscribe = studentsRef.onSnapshot(async (snapshot) => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     
-                    // 如果數據庫完全是空的，自動導入名單
-                    if (data.length === 0 && !isInitializing) {
-                        setIsInitializing(true);
-                        const batch = db.batch();
-                        initialStudents.forEach((s, idx) => {
-                            const docId = `init_${idx}_${Date.now()}`;
-                            const ref = studentsRef.doc(docId);
-                            batch.set(ref, {
-                                name: s.name,
-                                belt: s.belt,
-                                attendanceCount: 0,
-                                checkedIn: false,
-                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    // 如果數據庫為空且未曾啟動導入
+                    if (data.length === 0 && !initStarted.current) {
+                        initStarted.current = true;
+                        setSyncMessage("正在導入完整學員名單 (130+ 人)...");
+                        
+                        try {
+                            // 分批處理避免 Firebase 負擔過重
+                            const batch = db.batch();
+                            initialStudents.forEach((s, idx) => {
+                                const docRef = studentsRef.doc(`member_${idx}`);
+                                batch.set(docRef, {
+                                    name: s.name,
+                                    belt: s.belt,
+                                    attendanceCount: 0,
+                                    checkedIn: false,
+                                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                                });
                             });
-                        });
-                        await batch.commit();
-                        setIsInitializing(false);
+                            await batch.commit();
+                        } catch (err) {
+                            console.error("Batch Init Error:", err);
+                        }
                     } else {
                         setStudents(data);
                         setLoading(false);
@@ -160,7 +171,7 @@
                     setLoading(false);
                 });
                 return () => unsubscribe();
-            }, [user, isInitializing]);
+            }, [user]);
 
             const sortedStudents = useMemo(() => {
                 return [...students].sort((a, b) => {
@@ -170,26 +181,12 @@
                 });
             }, [students]);
 
-            const addStudent = async (name, belt, autoCheckin = false) => {
-                if (!name.trim() || !user) return;
-                const id = Date.now().toString();
-                try {
-                    const docRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('students').doc(id);
-                    await docRef.set({
-                        name,
-                        belt,
-                        attendanceCount: 0,
-                        checkedIn: autoCheckin,
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                    });
-                } catch (e) { alert("儲存失敗"); }
-            };
-
             const toggleCheckin = async (id, status) => {
                 if (!user) return;
                 try {
-                    const docRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('students').doc(id);
-                    await docRef.update({ checkedIn: status });
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('students').doc(id).update({ 
+                        checkedIn: status 
+                    });
                 } catch (e) { console.error(e); }
             };
 
@@ -198,7 +195,7 @@
                 const checkedIn = students.filter(s => s.checkedIn);
                 if (checkedIn.length === 0) return;
                 
-                if (confirm(`結算 ${checkedIn.length} 位學員？`)) {
+                if (confirm(`確認結算今日出席的 ${checkedIn.length} 位學員？`)) {
                     const batch = db.batch();
                     checkedIn.forEach(s => {
                         const ref = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('students').doc(s.id);
@@ -208,91 +205,91 @@
                         });
                     });
                     await batch.commit();
-                    alert("結算完成！");
+                    alert("數據已同步至雲端，結算完成！");
                 }
             };
 
             const deleteStudent = async (id) => {
-                if (!user || !confirm("確定刪除？")) return;
+                if (!user || !confirm("確定從雲端名單刪除？")) return;
                 await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('students').doc(id).delete();
             };
 
-            const currentUrl = window.location.href.split('?')[0];
-            const qrValue = `${currentUrl}?mode=checkin`;
-            const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrValue)}&color=bc002d`;
+            const addStudent = async (name, belt, autoCheckin = false) => {
+                if (!name.trim() || !user) return;
+                const id = "manual_" + Date.now();
+                try {
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('students').doc(id).set({
+                        name,
+                        belt,
+                        attendanceCount: 0,
+                        checkedIn: autoCheckin,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    setNewName('');
+                    setShowAddModal(false);
+                } catch (e) { alert("儲存失敗"); }
+            };
 
-            if (loading || isInitializing) return (
-                <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-center p-6">
-                    <div className="w-12 h-12 border-4 border-red-200 border-t-red-600 rounded-full animate-spin mb-4"></div>
-                    <div className="font-bold text-slate-500">
-                        {isInitializing ? "正在導入 130+ 位名單至雲端..." : "正在讀取數據..."}
-                    </div>
-                    <p className="text-xs text-slate-400 mt-2">首次運行請稍候，系統正在建立數據檔案。</p>
+            if (loading) return (
+                <div className="h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6">
+                    <div className="w-16 h-16 border-4 border-slate-700 border-t-red-500 rounded-full animate-spin mb-6"></div>
+                    <div className="text-xl font-black italic tracking-widest mb-2">OSU! LOADING</div>
+                    <div className="text-slate-400 font-medium">{syncMessage}</div>
                 </div>
             );
 
             if (isMobileMode) {
                 return (
                     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-                        <div className="p-6 bg-red-600 text-white shadow-lg text-center">
-                            <h1 className="text-2xl font-black italic">OSU! 道場簽到</h1>
+                        <div className="p-6 bg-red-600 text-white shadow-lg text-center sticky top-0 z-20">
+                            <h1 className="text-2xl font-black italic tracking-tighter">KARATE CHECK-IN</h1>
                         </div>
                         <div className="flex-1 p-4 overflow-y-auto">
-                            <div className="mb-4 flex gap-2">
+                            <div className="mb-6 flex gap-2 sticky top-2 z-10">
                                 <input 
                                     type="text" 
-                                    placeholder="搜尋你的名字..."
-                                    className="flex-1 p-4 rounded-2xl border-none shadow-md outline-none focus:ring-2 focus:ring-red-500 text-lg"
+                                    placeholder="輸入姓名..."
+                                    className="flex-1 p-4 rounded-2xl border-none shadow-xl outline-none focus:ring-4 focus:ring-red-500/20 text-lg font-bold"
                                     value={mobileSearch}
                                     onChange={e => setMobileSearch(e.target.value)}
                                 />
-                                <button onClick={() => setShowAddModal(true)} className="bg-slate-800 text-white px-4 rounded-2xl shadow-md flex items-center justify-center">
+                                <button onClick={() => setShowAddModal(true)} className="bg-slate-900 text-white w-14 rounded-2xl shadow-xl flex items-center justify-center">
                                     <Icon name="user-plus" />
                                 </button>
                             </div>
-                            <div className="grid gap-3 pb-20">
-                                {sortedStudents.filter(s => !s.checkedIn && s.name.includes(mobileSearch)).slice(0, 50).map(s => (
+                            <div className="grid gap-3 pb-10">
+                                {sortedStudents.filter(s => !s.checkedIn && s.name.includes(mobileSearch)).map(s => (
                                     <button 
                                         key={s.id}
                                         onClick={async () => {
                                             if (confirm(`確認為 ${s.name} 簽到？`)) {
                                                 await toggleCheckin(s.id, true);
-                                                alert("簽到成功！OSU!");
                                                 setMobileSearch('');
                                             }
                                         }}
-                                        className="w-full text-left p-5 rounded-2xl bg-white shadow-sm flex justify-between items-center active:scale-95 transition-all border border-slate-100"
+                                        className="w-full text-left p-5 rounded-2xl bg-white shadow-sm flex justify-between items-center border border-slate-100 active:scale-95 transition-all"
                                     >
                                         <div>
                                             <div className="font-bold text-lg text-slate-800">{s.name}</div>
-                                            <div className="text-xs font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded inline-block mt-1">{s.belt}</div>
+                                            <div className="text-xs font-black text-slate-400 bg-slate-100 px-2 py-0.5 rounded inline-block mt-1">{s.belt}</div>
                                         </div>
-                                        <Icon name="check-circle" className="text-slate-200" />
+                                        <Icon name="circle" className="text-slate-200" />
                                     </button>
                                 ))}
                             </div>
                         </div>
                         {showAddModal && (
-                            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 z-50">
-                                <div className="bg-white rounded-[2rem] w-full max-w-sm p-8 shadow-2xl scale-in">
-                                    <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Icon name="user-plus" className="text-red-600"/> 臨時報名</h2>
+                            <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-6 z-50">
+                                <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 shadow-2xl scale-in">
+                                    <h2 className="text-2xl font-black mb-6 text-slate-800">臨時加入學員</h2>
                                     <div className="space-y-4">
-                                        <input type="text" placeholder="真實姓名" className="w-full p-4 bg-slate-50 rounded-xl border border-slate-200 outline-none focus:border-red-500" value={newName} onChange={e=>setNewName(e.target.value)} />
-                                        <select className="w-full p-4 bg-slate-50 rounded-xl border border-slate-200" value={newBelt} onChange={e=>setNewBelt(e.target.value)}>
+                                        <input type="text" placeholder="真實姓名" className="w-full p-4 bg-slate-100 rounded-2xl border-none outline-none focus:ring-2 focus:ring-red-500 font-bold" value={newName} onChange={e=>setNewName(e.target.value)} />
+                                        <select className="w-full p-4 bg-slate-100 rounded-2xl border-none font-bold" value={newBelt} onChange={e=>setNewBelt(e.target.value)}>
                                             {beltOrder.map(b => <option key={b} value={b}>{b}</option>)}
                                         </select>
                                         <div className="flex gap-3 pt-4">
                                             <button onClick={()=>setShowAddModal(false)} className="flex-1 py-4 font-bold text-slate-400">取消</button>
-                                            <button 
-                                                onClick={async ()=>{
-                                                    if(!newName) return;
-                                                    await addStudent(newName, newBelt, true);
-                                                    setShowAddModal(false);
-                                                    setNewName('');
-                                                    alert("報名並簽到成功！");
-                                                }}
-                                                className="flex-1 bg-red-600 text-white py-4 rounded-xl font-bold"
-                                            >確認加入</button>
+                                            <button onClick={()=>addStudent(newName, newBelt, true)} className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-black shadow-lg">確認簽到</button>
                                         </div>
                                     </div>
                                 </div>
@@ -303,66 +300,74 @@
             }
 
             return (
-                <div className="max-w-6xl mx-auto p-4 md:p-8 font-sans text-slate-800">
-                    <div className="flex bg-white rounded-2xl shadow-sm p-1.5 mb-8 border border-slate-200">
-                        <button onClick={() => setActiveTab('admin')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition ${activeTab === 'admin' ? 'bg-red-600 text-white shadow-md' : 'text-slate-400'}`}>
-                            <Icon name="users" /> 學員名單
+                <div className="max-w-7xl mx-auto p-4 md:p-8 font-sans">
+                    <div className="flex bg-white rounded-3xl shadow-sm p-2 mb-10 border border-slate-200 max-w-md mx-auto">
+                        <button onClick={() => setActiveTab('admin')} className={`flex-1 py-4 rounded-2xl font-black italic tracking-widest flex items-center justify-center gap-2 transition ${activeTab === 'admin' ? 'bg-red-600 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}>
+                            <Icon name="users" /> ADMIN
                         </button>
-                        <button onClick={() => setActiveTab('checkin')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition ${activeTab === 'checkin' ? 'bg-red-600 text-white shadow-md' : 'text-slate-400'}`}>
-                            <Icon name="qr-code" /> 簽到 QR
+                        <button onClick={() => setActiveTab('checkin')} className={`flex-1 py-4 rounded-2xl font-black italic tracking-widest flex items-center justify-center gap-2 transition ${activeTab === 'checkin' ? 'bg-red-600 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}>
+                            <Icon name="qr-code" /> QR CODE
                         </button>
                     </div>
 
                     {activeTab === 'admin' ? (
                         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                             <div className="lg:col-span-1 space-y-6">
-                                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 sticky top-8">
-                                    <h3 className="font-bold mb-4 flex items-center gap-2 text-slate-600"><Icon name="search" /> 篩選名單</h3>
-                                    <input type="text" placeholder="輸入姓名搜尋..." className="w-full px-4 py-3 rounded-xl border border-slate-200 mb-4 outline-none focus:border-red-500" onChange={e => setSearchTerm(e.target.value)} />
-                                    <div className="flex items-center justify-between text-sm bg-slate-50 p-4 rounded-xl mb-4">
-                                        <span className="font-bold text-slate-500">只顯示已簽到</span>
-                                        <button onClick={() => setShowAll(!showAll)} className={`w-10 h-5 rounded-full relative transition-colors ${!showAll ? 'bg-green-500' : 'bg-slate-300'}`}>
-                                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm transition-all ${!showAll ? 'left-6' : 'left-1'}`} />
-                                        </button>
-                                    </div>
-                                    <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
-                                        <div className="text-xs text-blue-500 font-bold mb-1 uppercase tracking-wider">今日出勤率</div>
-                                        <div className="text-2xl font-black text-blue-700">{students.filter(s=>s.checkedIn).length} / {students.length}</div>
+                                <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 sticky top-8">
+                                    <h3 className="font-black text-slate-800 mb-6 flex items-center gap-2 border-b pb-4"><Icon name="search" /> 搜尋篩選</h3>
+                                    <input type="text" placeholder="輸入學員姓名..." className="w-full px-5 py-4 rounded-2xl bg-slate-50 border-none mb-6 outline-none focus:ring-2 focus:ring-red-500 font-bold" onChange={e => setSearchTerm(e.target.value)} />
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                                            <span className="font-bold text-slate-500">顯示所有人</span>
+                                            <button onClick={() => setShowAll(!showAll)} className={`w-12 h-6 rounded-full relative transition-all ${showAll ? 'bg-slate-200' : 'bg-green-500'}`}>
+                                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${showAll ? 'left-1' : 'left-7'}`} />
+                                            </button>
+                                        </div>
+                                        <div className="p-5 bg-blue-600 rounded-2xl text-white shadow-lg shadow-blue-200">
+                                            <div className="text-[10px] font-black uppercase opacity-60 mb-1">今日出勤數據</div>
+                                            <div className="text-3xl font-black italic tracking-tighter">
+                                                {students.filter(s=>s.checkedIn).length} <span className="text-sm opacity-50 font-normal">/ {students.length}</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
                             <div className="lg:col-span-3 space-y-6">
-                                <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-                                    <div className="max-h-[600px] overflow-y-auto">
-                                        <table className="w-full text-left text-sm">
-                                            <thead className="bg-slate-50 text-slate-400 font-bold sticky top-0 z-10">
+                                <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left">
+                                            <thead className="bg-slate-50 text-slate-400 font-black text-[11px] uppercase tracking-widest sticky top-0 z-10">
                                                 <tr>
-                                                    <th className="px-6 py-4">狀態</th>
-                                                    <th className="px-6 py-4 text-base">姓名</th>
-                                                    <th className="px-6 py-4">級數</th>
-                                                    <th className="px-6 py-4 text-center">出席次數</th>
-                                                    <th className="px-6 py-4 text-center">操作</th>
+                                                    <th className="px-8 py-5">狀態</th>
+                                                    <th className="px-8 py-5">姓名</th>
+                                                    <th className="px-8 py-5">段/級數</th>
+                                                    <th className="px-8 py-5 text-center">出席次數</th>
+                                                    <th className="px-8 py-5 text-right">管理</th>
                                                 </tr>
                                             </thead>
-                                            <tbody className="divide-y divide-slate-100">
+                                            <tbody className="divide-y divide-slate-50">
                                                 {sortedStudents.filter(s => (showAll || s.checkedIn) && s.name.includes(searchTerm)).map(s => (
-                                                    <tr key={s.id} className={`hover:bg-slate-50 transition ${s.checkedIn ? 'bg-green-50/30' : ''}`}>
-                                                        <td className="px-6 py-4">
+                                                    <tr key={s.id} className={`group hover:bg-slate-50/50 transition ${s.checkedIn ? 'bg-green-50/50' : ''}`}>
+                                                        <td className="px-8 py-5">
                                                             <button 
                                                                 onClick={() => toggleCheckin(s.id, !s.checkedIn)}
-                                                                className={`px-3 py-1 rounded-full text-[10px] font-black uppercase transition-all ${s.checkedIn ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-400'}`}
+                                                                className={`px-4 py-1.5 rounded-full text-[10px] font-black italic transition-all ${s.checkedIn ? 'bg-green-500 text-white shadow-lg' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
                                                             >
-                                                                {s.checkedIn ? '已簽到' : '未簽到'}
+                                                                {s.checkedIn ? 'CHECKED' : 'ABSENT'}
                                                             </button>
                                                         </td>
-                                                        <td className="px-6 py-4 font-bold text-slate-700 text-base">{s.name}</td>
-                                                        <td className="px-6 py-4">
-                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${s.belt.includes('段') ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>{s.belt}</span>
+                                                        <td className="px-8 py-5 font-black text-slate-700 text-lg">{s.name}</td>
+                                                        <td className="px-8 py-5">
+                                                            <span className={`px-3 py-1 rounded-lg text-[11px] font-black ${s.belt.includes('段') ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                                                                {s.belt}
+                                                            </span>
                                                         </td>
-                                                        <td className="px-6 py-4 font-mono font-bold text-center text-lg text-blue-600">{s.attendanceCount || 0}</td>
-                                                        <td className="px-6 py-4 text-center">
-                                                            <button onClick={() => deleteStudent(s.id)} className="text-slate-200 hover:text-red-500 transition-colors"><Icon name="trash-2" size={16}/></button>
+                                                        <td className="px-8 py-5 text-center font-mono font-black text-xl text-blue-600">{s.attendanceCount || 0}</td>
+                                                        <td className="px-8 py-5 text-right">
+                                                            <button onClick={() => deleteStudent(s.id)} className="text-slate-200 hover:text-red-500 transition-colors">
+                                                                <Icon name="trash-2" size={16} />
+                                                            </button>
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -370,21 +375,24 @@
                                         </table>
                                     </div>
                                 </div>
-                                <div className="flex gap-4">
-                                    <button onClick={finishSession} className="flex-1 bg-blue-600 text-white py-5 rounded-3xl font-bold text-lg shadow-xl hover:bg-blue-700 transition-all active:scale-95 flex items-center justify-center gap-3">
-                                        <Icon name="save" /> 結束今日課堂並結算
-                                    </button>
-                                </div>
+                                <button onClick={finishSession} className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black text-xl italic tracking-widest shadow-2xl hover:bg-black transition-all active:scale-95 flex items-center justify-center gap-4">
+                                    <Icon name="award" size={24} /> 結算今日課程數據 (OSU!)
+                                </button>
                             </div>
                         </div>
                     ) : (
-                        <div className="bg-white rounded-[3.5rem] shadow-xl border-8 border-red-50 p-10 md:p-20 flex flex-col items-center text-center max-w-2xl mx-auto">
-                            <h2 className="text-4xl font-black text-slate-800 mb-4 italic tracking-tight">道場簽到 QR</h2>
-                            <p className="text-slate-400 mb-10 font-medium leading-relaxed">請學員掃描進入系統簽到。<br/>若名單無名，請點擊手機右上角「＋」報名。</p>
-                            <div className="p-8 bg-white rounded-[3rem] shadow-2xl shadow-red-100 border border-slate-50">
-                                <img src={qrSrc} alt="QR Code" className="w-64 h-64" />
+                        <div className="bg-white rounded-[4rem] shadow-2xl border border-slate-100 p-12 md:p-24 flex flex-col items-center text-center max-w-3xl mx-auto scale-in">
+                            <h2 className="text-5xl font-black text-slate-900 mb-6 italic tracking-tighter uppercase">Check-in Portal</h2>
+                            <p className="text-slate-400 mb-12 text-lg font-medium max-w-md">請學員掃描下方二維碼進入系統，搜尋並點擊姓名完成簽到。OSS!</p>
+                            <div className="p-10 bg-white rounded-[3.5rem] shadow-2xl shadow-red-100 border-8 border-slate-50 relative overflow-hidden group">
+                                <img src={qrSrc} alt="QR Code" className="w-72 h-72 relative z-10" />
+                                <div className="absolute inset-0 bg-red-600 opacity-0 group-hover:opacity-5 transition-opacity"></div>
                             </div>
-                            <div className="mt-8 text-xs text-slate-300 font-mono tracking-widest uppercase">OSS! Karate Management System</div>
+                            <div className="mt-12 flex items-center gap-3 text-slate-300 font-mono tracking-widest text-xs uppercase">
+                                <div className="w-12 h-[1px] bg-slate-200"></div>
+                                Karate Cloud Sync System v2.0
+                                <div className="w-12 h-[1px] bg-slate-200"></div>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -395,12 +403,14 @@
         root.render(<App />);
     </script>
     <style>
-        @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        .scale-in { animation: scaleIn 0.3s ease-out forwards; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        @keyframes scaleIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .scale-in { animation: scaleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f8fafc; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; border: 2px solid #f8fafc; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </body>
 </html>
