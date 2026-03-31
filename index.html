@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>空手道道場雲端簽到系統</title>
+    <!-- 引入 React 與 Tailwind CSS -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Lucide 圖標 -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // --- 設定 ---
+        const appId = 'karate-attendance-pro'; // 如果有需要可以修改此 ID 區分不同班級
+
+        const beltOrder = [
+            '8段', '7段', '6段', '5段', '4段', '3段', '2段', '初段',
+            '1級', '2級', '3級', '4級', '5級', '6級', '7級', '8級', '9級', '10級'
+        ];
+
+        // 簡易 Lucide 圖標組件
+        const Icon = ({ name, size = 18, className = "" }) => {
+            useEffect(() => {
+                if (window.lucide) window.lucide.createIcons();
+            }, [name]);
+            return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
+        };
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('admin');
+            const [isMobileMode, setIsMobileMode] = useState(false);
+            const [students, setStudents] = useState([]);
+            const [newName, setNewName] = useState('');
+            const [newBelt, setNewBelt] = useState('初段');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [mobileSearch, setMobileSearch] = useState('');
+            const [selectedMobileStudent, setSelectedMobileStudent] = useState(null);
+            const [showAll, setShowAll] = useState(true);
+
+            // 檢查 URL 參數是否為簽到模式
+            useEffect(() => {
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('mode') === 'checkin') {
+                    setIsMobileMode(true);
+                }
+            }, []);
+
+            // 從瀏覽器本地儲存載入數據 (方案一：單機版)
+            // 如果要真正的雲端同步，請將此處替換為 Firebase 邏輯
+            useEffect(() => {
+                const saved = localStorage.getItem(`students_${appId}`);
+                if (saved) setStudents(JSON.parse(saved));
+            }, []);
+
+            useEffect(() => {
+                localStorage.setItem(`students_${appId}`, JSON.stringify(students));
+            }, [students]);
+
+            const sortedStudents = useMemo(() => {
+                return [...students].sort((a, b) => {
+                    const indexA = beltOrder.indexOf(a.belt);
+                    const indexB = beltOrder.indexOf(b.belt);
+                    return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+                });
+            }, [students]);
+
+            const addStudent = () => {
+                if (!newName.trim()) return;
+                setStudents([...students, {
+                    id: Date.now().toString(),
+                    name: newName,
+                    belt: newBelt,
+                    attendanceCount: 0,
+                    checkedIn: false
+                }]);
+                setNewName('');
+            };
+
+            const toggleCheckin = (id) => {
+                setStudents(students.map(s => s.id === id ? { ...s, checkedIn: !s.checkedIn } : s));
+            };
+
+            const deleteStudent = (id) => {
+                if (confirm("確定刪除？")) {
+                    setStudents(students.filter(s => s.id !== id));
+                }
+            };
+
+            const finishSession = () => {
+                const checkedIn = students.filter(s => s.checkedIn);
+                if (checkedIn.length === 0) return;
+                if (confirm(`結算 ${checkedIn.length} 位學員？`)) {
+                    setStudents(students.map(s => s.checkedIn ? { ...s, attendanceCount: s.attendanceCount + 1, checkedIn: false } : s));
+                    alert("結算完成，出席次數已更新！");
+                }
+            };
+
+            // 自動計算當前網址，確保 QR Code 正確
+            const currentUrl = window.location.href.split('?')[0];
+            const qrValue = `${currentUrl}?mode=checkin`;
+            const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrValue)}&color=bc002d`;
+
+            // 手機簽到介面
+            if (isMobileMode) {
+                return (
+                    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
+                        <div className="p-6 bg-red-600 text-white shadow-lg text-center">
+                            <h1 className="text-2xl font-black italic tracking-wider">OSU! 道場簽到</h1>
+                            <p className="text-red-100 text-sm opacity-90 mt-1 font-medium">請選擇您的名字</p>
+                        </div>
+                        <div className="flex-1 p-6 overflow-y-auto">
+                            <div className="relative mb-6">
+                                <input 
+                                    type="text" 
+                                    placeholder="搜尋姓名..."
+                                    className="w-full p-4 pl-12 rounded-2xl border-none shadow-md outline-none focus:ring-2 focus:ring-red-500"
+                                    value={mobileSearch}
+                                    onChange={e => setMobileSearch(e.target.value)}
+                                />
+                                <div className="absolute left-4 top-4 text-slate-400">
+                                    <Icon name="search" size={20} />
+                                </div>
+                            </div>
+                            <div className="grid gap-4">
+                                {sortedStudents.filter(s => !s.checkedIn && s.name.includes(mobileSearch)).map(s => (
+                                    <button 
+                                        key={s.id}
+                                        onClick={() => setSelectedMobileStudent(s)}
+                                        className={`w-full text-left p-5 rounded-2xl border-2 transition-all flex justify-between items-center ${selectedMobileStudent?.id === s.id ? 'border-red-600 bg-red-50 shadow-md' : 'border-white bg-white shadow-sm'}`}
+                                    >
+                                        <div>
+                                            <div className="font-bold text-lg text-slate-800">{s.name}</div>
+                                            <div className="text-xs font-bold text-slate-400 px-2 py-0.5 bg-slate-100 rounded inline-block mt-1">{s.belt}</div>
+                                        </div>
+                                        {selectedMobileStudent?.id === s.id && <Icon name="check-circle" className="text-red-600" size={24} />}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="p-6 bg-white border-t sticky bottom-0">
+                            <button 
+                                disabled={!selectedMobileStudent}
+                                onClick={() => {
+                                    toggleCheckin(selectedMobileStudent.id);
+                                    alert(`簽到成功！OSU ${selectedMobileStudent.name}`);
+                                    setSelectedMobileStudent(null);
+                                }}
+                                className="w-full bg-red-600 text-white py-5 rounded-2xl font-bold text-xl shadow-xl disabled:bg-slate-200 disabled:text-slate-400 transition-all active:scale-95"
+                            >
+                                確認簽到
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 教練後台介面
+            return (
+                <div className="max-w-5xl mx-auto p-4 md:p-8 font-sans text-slate-800">
+                    <div className="flex bg-white rounded-2xl shadow-sm p-1.5 mb-8 border border-slate-200">
+                        <button onClick={() => setActiveTab('admin')} className={`flex-1 py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'admin' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+                            <Icon name="users" /> 管理面板
+                        </button>
+                        <button onClick={() => setActiveTab('checkin')} className={`flex-1 py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'checkin' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}>
+                            <Icon name="qr-code" /> 簽到 QR 碼
+                        </button>
+                    </div>
+
+                    {activeTab === 'admin' ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div className="space-y-6">
+                                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                    <h3 className="font-bold mb-5 flex items-center gap-2 text-red-600 text-lg"><Icon name="user-plus" /> 新增學員</h3>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-400 uppercase ml-1">姓名</label>
+                                            <input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="輸入姓名" className="w-full px-4 py-3 rounded-xl border border-slate-200 mt-1 outline-none focus:border-red-500 transition-colors" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-400 uppercase ml-1">級數</label>
+                                            <select value={newBelt} onChange={e => setNewBelt(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 mt-1 bg-white outline-none focus:border-red-500 transition-colors">
+                                                {beltOrder.map(b => <option key={b} value={b}>{b}</option>)}
+                                            </select>
+                                        </div>
+                                        <button onClick={addStudent} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-black transition-colors shadow-md">確認加入</button>
+                                    </div>
+                                </div>
+                                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                    <h3 className="font-bold mb-4 flex items-center gap-2 text-slate-600"><Icon name="filter" /> 搜尋與篩選</h3>
+                                    <input type="text" placeholder="搜尋姓名..." className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm mb-5 outline-none focus:border-red-500" onChange={e => setSearchTerm(e.target.value)} />
+                                    <div className="flex items-center justify-between text-sm bg-slate-50 p-3 rounded-xl">
+                                        <span className="font-bold text-slate-500">顯示全體名單</span>
+                                        <button onClick={() => setShowAll(!showAll)} className={`w-12 h-6 rounded-full transition-colors relative ${showAll ? 'bg-red-500' : 'bg-slate-300'}`}>
+                                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${showAll ? 'left-7' : 'left-1'}`} />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="lg:col-span-2 space-y-6">
+                                <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                                    <div className="p-6 border-b flex justify-between items-center bg-white">
+                                        <div>
+                                            <h2 className="font-bold text-xl">出席名冊</h2>
+                                            <p className="text-xs text-slate-400 mt-1">目前共有 {students.length} 位學員</p>
+                                        </div>
+                                        <button className="bg-emerald-50 text-emerald-600 p-2.5 rounded-xl hover:bg-emerald-100 transition-colors">
+                                            <Icon name="download" />
+                                        </button>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-sm">
+                                            <thead className="bg-slate-50 text-slate-400 font-bold">
+                                                <tr>
+                                                    <th className="px-6 py-4">簽到</th>
+                                                    <th className="px-6 py-4">姓名</th>
+                                                    <th className="px-6 py-4">級數</th>
+                                                    <th className="px-6 py-4">累計出席</th>
+                                                    <th className="px-6 py-4 text-center">操作</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {sortedStudents.filter(s => (showAll || s.checkedIn) && s.name.includes(searchTerm)).map(s => (
+                                                    <tr key={s.id} className="hover:bg-slate-50/50 transition">
+                                                        <td className="px-6 py-4">
+                                                            <button onClick={() => toggleCheckin(s.id)} className={`px-4 py-1.5 rounded-full text-[11px] font-black tracking-wider uppercase transition-all ${s.checkedIn ? 'bg-green-500 text-white shadow-sm shadow-green-200' : 'bg-slate-100 text-slate-400'}`}>
+                                                                {s.checkedIn ? '已簽到' : '未簽到'}
+                                                            </button>
+                                                        </td>
+                                                        <td className="px-6 py-4 font-bold text-slate-700">{s.name}</td>
+                                                        <td className="px-6 py-4">
+                                                            <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${s.belt.includes('段') ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>{s.belt}</span>
+                                                        </td>
+                                                        <td className="px-6 py-4 font-mono font-bold text-lg text-blue-600">{s.attendanceCount}</td>
+                                                        <td className="px-6 py-4 text-center">
+                                                            <button onClick={() => deleteStudent(s.id)} className="text-slate-300 hover:text-red-500 transition-colors"><Icon name="trash-2" size={18}/></button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                        {students.length === 0 && (
+                                            <div className="py-20 text-center text-slate-300 flex flex-col items-center">
+                                                <Icon name="user-x" size={48} className="mb-2 opacity-20" />
+                                                <p>目前名單為空，請先新增學員</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <button onClick={finishSession} className="w-full bg-blue-600 text-white py-5 rounded-3xl font-bold text-lg shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all transform hover:-translate-y-1">
+                                    結束課堂並結算數據
+                                </button>
+                                <p className="text-center text-xs text-slate-400 italic">提示：結算後「已簽到」學員的次數會自動 +1，並重置所有簽到狀態</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="bg-white rounded-[3.5rem] shadow-xl border-8 border-red-50 p-10 md:p-20 flex flex-col items-center text-center max-w-2xl mx-auto">
+                            <div className="bg-red-600 text-white px-6 py-2 rounded-full text-sm font-black italic tracking-widest mb-6">OSU! KARATE</div>
+                            <h2 className="text-4xl font-black text-slate-800 mb-3 tracking-tight">道場手機簽到</h2>
+                            <p className="text-slate-400 mb-10 font-medium max-w-xs">請學員掃描下方 QR 碼，進入頁面後選擇自己的名字即可簽到。</p>
+                            
+                            <div className="p-8 bg-white rounded-[3rem] shadow-2xl shadow-red-100 border border-slate-50 relative group transition-transform hover:scale-105">
+                                <img src={qrSrc} alt="QR Code" className="w-64 h-64" />
+                                <div className="absolute inset-0 border-4 border-red-600/5 rounded-[3rem] pointer-events-none"></div>
+                            </div>
+                            
+                            <div className="mt-12 p-5 bg-blue-50 rounded-2xl border border-blue-100 text-blue-700 text-sm flex items-start gap-3 text-left">
+                                <Icon name="info" className="mt-0.5 shrink-0" />
+                                <div>
+                                    <strong>教練貼士：</strong> 您可以將這個 QR 碼打印出來貼在道場門口。
+                                    學員簽到後，您的管理面板會「即時」顯示變動。
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
