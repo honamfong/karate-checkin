@@ -22,11 +22,10 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        // --- Firebase 配置 (由環境自動注入) ---
+        // --- Firebase 配置 ---
         const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
-        const appId = window.__app_id || 'karate-attendance-cloud';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'karate-attendance-cloud';
 
-        // 初始化 Firebase (Compat 版本確保在單一 HTML 穩定運行)
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
@@ -36,6 +35,55 @@
         const beltOrder = [
             '8段', '7段', '6段', '5段', '4段', '3段', '2段', '初段',
             '1級', '2級', '3級', '4級', '5級', '6級', '7級', '8級', '9級', '10級'
+        ];
+
+        // 完整初始名單
+        const initialStudents = [
+            {name: "梁伯偉", belt: "7段"}, {name: "黃家棟", belt: "7段"}, {name: "莫啟超", belt: "6段"},
+            {name: "黃穎欣", belt: "6段"}, {name: "方浩南", belt: "6段"}, {name: "黃梅芳", belt: "6段"},
+            {name: "陳傳文", belt: "5段"}, {name: "陳仁強", belt: "5段"}, {name: "曾少燕", belt: "4段"},
+            {name: "許健邦", belt: "4段"}, {name: "卓偉倫", belt: "4段"}, {name: "黃偉聲", belt: "4段"},
+            {name: "方浩銘", belt: "4段"}, {name: "區具興", belt: "4段"}, {name: "黃兆基", belt: "4段"},
+            {name: "黃佩華", belt: "4段"}, {name: "謝家碧", belt: "3段"}, {name: "陳廷臻", belt: "3段"},
+            {name: "李志龍", belt: "3段"}, {name: "周榮昌", belt: "3段"}, {name: "譚善威", belt: "3段"},
+            {name: "黎翠筠", belt: "3段"}, {name: "柯庭芝", belt: "2段"}, {name: "張翠芝", belt: "2段"},
+            {name: "胡珊林", belt: "2段"}, {name: "吳苑玲", belt: "2段"}, {name: "羅富健", belt: "2段"},
+            {name: "陳新瑾", belt: "2段"}, {name: "卓偉康", belt: "2段"}, {name: "杜建德", belt: "2段"},
+            {name: "溫浩麟", belt: "2段"}, {name: "李翔", belt: "2段"}, {name: "許嘉盈", belt: "2段"},
+            {name: "馬康騏", belt: "2段"}, {name: "袁曉慧", belt: "2段"}, {name: "袁曉琦", belt: "2段"},
+            {name: "陳士豪", belt: "2段"}, {name: "梁雪屏", belt: "2段"}, {name: "顏子樂", belt: "2段"},
+            {name: "黃靜韻", belt: "初段"}, {name: "黃綽霖", belt: "初段"}, {name: "羅鎮榮", belt: "初段"},
+            {name: "葉展峯", belt: "初段"}, {name: "伍婉婷", belt: "初段"}, {name: "黃家茵", belt: "初段"},
+            {name: "袁國基", belt: "初段"}, {name: "鄧逸朗", belt: "初段"}, {name: "萬可靖", belt: "初段"},
+            {name: "萬可霖", belt: "初段"}, {name: "陳佳濼", belt: "初段"}, {name: "張智嘉", belt: "初段"},
+            {name: "陳家禧", belt: "初段"}, {name: "黃梓峰", belt: "初段"}, {name: "潘仲祺", belt: "初段"},
+            {name: "廖煥兒", belt: "初段"}, {name: "吳菁琳", belt: "初段"}, {name: "陳奕思", belt: "初段"},
+            {name: "黃樂軒", belt: "初段"}, {name: "楊潁鋒", belt: "初段"}, {name: "李天澍", belt: "初段"},
+            {name: "王芯瑩", belt: "初段"}, {name: "盧家輝", belt: "初段"}, {name: "梁維倩", belt: "初段"},
+            {name: "彭國禎", belt: "初段"}, {name: "陳伊琳", belt: "初段"}, {name: "高智榮", belt: "初段"},
+            {name: "方國斌", belt: "初段"}, {name: "李心悅", belt: "初段"}, {name: "謝智勇", belt: "初段"},
+            {name: "韋少薇", belt: "初段"}, {name: "伍永鴻", belt: "1級"}, {name: "蘇偉麟", belt: "1級"},
+            {name: "樊智煜", belt: "1級"}, {name: "張栢浩", belt: "1級"}, {name: "李卓婷", belt: "1級"},
+            {name: "鍾承舜", belt: "1級"}, {name: "馬婧嵐", belt: "1級"}, {name: "李浩天", belt: "1級"},
+            {name: "余佩嬋", belt: "1級"}, {name: "胡子妍", belt: "1級"}, {name: "練煒浩", belt: "1級"},
+            {name: "蔡賜宏", belt: "1級"}, {name: "王名妮", belt: "1級"}, {name: "黃樂瞳", belt: "1級"},
+            {name: "陸禹恒", belt: "1級"}, {name: "謝展平", belt: "1級"}, {name: "吳卓臨", belt: "1級"},
+            {name: "關詩彥", belt: "2級"}, {name: "王文承", belt: "2級"}, {name: "朱凱婷", belt: "2級"},
+            {name: "勞翰琳", belt: "2級"}, {name: "顏尊理", belt: "2級"}, {name: "許皓寧", belt: "2級"},
+            {name: "李依晴", belt: "2級"}, {name: "李磊靖", belt: "2級"}, {name: "李梓瀚", belt: "2級"},
+            {name: "李凱悅", belt: "2級"}, {name: "楊海萍", belt: "2級"}, {name: "黃栢祺", belt: "2級"},
+            {name: "伍煒城", belt: "2級"}, {name: "方文灝", belt: "2級"}, {name: "陳宗暉", belt: "2級"},
+            {name: "黃立昕", belt: "3級"}, {name: "方胤傑", belt: "3級"}, {name: "周曉慧", belt: "3級"},
+            {name: "敖芷晴", belt: "6級"}, {name: "黎樹成", belt: "4級"}, {name: "鄧婉筠", belt: "4級"},
+            {name: "李美賢", belt: "4級"}, {name: "陳卓男", belt: "4級"}, {name: "洪逸威", belt: "4級"},
+            {name: "胡子熙", belt: "4級"}, {name: "冼穎彤", belt: "4級"}, {name: "何浚軒", belt: "4級"},
+            {name: "李力超", belt: "4級"}, {name: "周劍", belt: "4級"}, {name: "林景有", belt: "5級"},
+            {name: "Lokesh", belt: "5級"}, {name: "Krishnan", belt: "5級"}, {name: "潘怡", belt: "5級"},
+            {name: "錢永業", belt: "6級"}, {name: "謝楚蕎", belt: "6級"}, {name: "陳仲欣", belt: "6級"},
+            {name: "方美茵", belt: "6級"}, {name: "Tejal", belt: "6級"}, {name: "黎語翹", belt: "6級"},
+            {name: "鄺敏玲", belt: "7級"}, {name: "區朗晴", belt: "7級"}, {name: "林灝天", belt: "7級"},
+            {name: "Pacscal Egard", belt: "7級"}, {name: "陳心怡", belt: "7級"}, {name: "葉俊汝", belt: "7級"},
+            {name: "楊振強", belt: "7級"}, {name: "郭蕊熒", belt: "7級"}, {name: "關海容", belt: "7級"}
         ];
 
         const Icon = ({ name, size = 18, className = "" }) => {
@@ -49,42 +97,70 @@
             const [isMobileMode, setIsMobileMode] = useState(false);
             const [students, setStudents] = useState([]);
             const [loading, setLoading] = useState(true);
+            const [isInitializing, setIsInitializing] = useState(false);
             
-            // 表單狀態
             const [newName, setNewName] = useState('');
             const [newBelt, setNewBelt] = useState('10級');
             const [searchTerm, setSearchTerm] = useState('');
             const [mobileSearch, setMobileSearch] = useState('');
             const [showAll, setShowAll] = useState(true);
-            const [showAddModal, setShowAddModal] = useState(false); // 手機端加名彈窗
+            const [showAddModal, setShowAddModal] = useState(false);
 
-            // 1. 初始化匿名登錄與模式檢查
             useEffect(() => {
                 const params = new URLSearchParams(window.location.search);
                 if (params.get('mode') === 'checkin') setIsMobileMode(true);
 
-                auth.signInAnonymously().catch(console.error);
-                const unsubscribe = auth.onAuthStateChanged(u => {
-                    setUser(u);
-                });
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await auth.signInWithCustomToken(__initial_auth_token);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
+                    } catch (e) { console.error("Auth Error:", e); }
+                };
+                initAuth();
+
+                const unsubscribe = auth.onAuthStateChanged(u => { setUser(u); });
                 return () => unsubscribe();
             }, []);
 
-            // 2. 實時監聽雲端數據 (Firestore)
+            // 數據監聽與初始名單導入
             useEffect(() => {
                 if (!user) return;
-                // 注意：路徑遵循規範 /artifacts/{appId}/public/data/students
-                const unsubscribe = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('students')
-                    .onSnapshot((snapshot) => {
-                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                const studentsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('students');
+                
+                const unsubscribe = studentsRef.onSnapshot(async (snapshot) => {
+                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    
+                    // 如果數據庫完全是空的，自動導入名單
+                    if (data.length === 0 && !isInitializing) {
+                        setIsInitializing(true);
+                        const batch = db.batch();
+                        initialStudents.forEach((s, idx) => {
+                            const docId = `init_${idx}_${Date.now()}`;
+                            const ref = studentsRef.doc(docId);
+                            batch.set(ref, {
+                                name: s.name,
+                                belt: s.belt,
+                                attendanceCount: 0,
+                                checkedIn: false,
+                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        });
+                        await batch.commit();
+                        setIsInitializing(false);
+                    } else {
                         setStudents(data);
                         setLoading(false);
-                    }, (err) => {
-                        console.error("Firestore Error:", err);
-                        setLoading(false);
-                    });
+                    }
+                }, (err) => {
+                    console.error("Firestore Error:", err);
+                    setLoading(false);
+                });
                 return () => unsubscribe();
-            }, [user]);
+            }, [user, isInitializing]);
 
             const sortedStudents = useMemo(() => {
                 return [...students].sort((a, b) => {
@@ -94,33 +170,35 @@
                 });
             }, [students]);
 
-            // 操作：新增學員 (雲端)
             const addStudent = async (name, belt, autoCheckin = false) => {
-                if (!name.trim()) return;
+                if (!name.trim() || !user) return;
                 const id = Date.now().toString();
                 try {
-                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('students').doc(id).set({
+                    const docRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('students').doc(id);
+                    await docRef.set({
                         name,
                         belt,
                         attendanceCount: 0,
                         checkedIn: autoCheckin,
-                        lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
-                } catch (e) { alert("儲存失敗，請檢查網絡"); }
+                } catch (e) { alert("儲存失敗"); }
             };
 
-            // 操作：簽到
             const toggleCheckin = async (id, status) => {
-                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('students').doc(id).update({
-                    checkedIn: status
-                });
+                if (!user) return;
+                try {
+                    const docRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('students').doc(id);
+                    await docRef.update({ checkedIn: status });
+                } catch (e) { console.error(e); }
             };
 
-            // 操作：結算
             const finishSession = async () => {
+                if (!user) return;
                 const checkedIn = students.filter(s => s.checkedIn);
                 if (checkedIn.length === 0) return;
-                if (confirm(`結算 ${checkedIn.length} 位已簽到學員？`)) {
+                
+                if (confirm(`結算 ${checkedIn.length} 位學員？`)) {
                     const batch = db.batch();
                     checkedIn.forEach(s => {
                         const ref = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('students').doc(s.id);
@@ -130,75 +208,74 @@
                         });
                     });
                     await batch.commit();
-                    alert("數據已同步至雲端並結算完成！");
+                    alert("結算完成！");
                 }
+            };
+
+            const deleteStudent = async (id) => {
+                if (!user || !confirm("確定刪除？")) return;
+                await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('students').doc(id).delete();
             };
 
             const currentUrl = window.location.href.split('?')[0];
             const qrValue = `${currentUrl}?mode=checkin`;
             const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrValue)}&color=bc002d`;
 
-            if (loading) return <div className="h-screen flex items-center justify-center font-bold text-slate-400 animate-pulse text-lg">正在連接雲端數據庫...</div>;
+            if (loading || isInitializing) return (
+                <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-center p-6">
+                    <div className="w-12 h-12 border-4 border-red-200 border-t-red-600 rounded-full animate-spin mb-4"></div>
+                    <div className="font-bold text-slate-500">
+                        {isInitializing ? "正在導入 130+ 位名單至雲端..." : "正在讀取數據..."}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-2">首次運行請稍候，系統正在建立數據檔案。</p>
+                </div>
+            );
 
-            // --- 手機模式 UI ---
             if (isMobileMode) {
                 return (
                     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
                         <div className="p-6 bg-red-600 text-white shadow-lg text-center">
                             <h1 className="text-2xl font-black italic">OSU! 道場簽到</h1>
                         </div>
-                        
-                        <div className="flex-1 p-6">
-                            <div className="mb-6 flex gap-2">
+                        <div className="flex-1 p-4 overflow-y-auto">
+                            <div className="mb-4 flex gap-2">
                                 <input 
                                     type="text" 
-                                    placeholder="搜尋名字..."
-                                    className="flex-1 p-4 rounded-2xl border-none shadow-md outline-none focus:ring-2 focus:ring-red-500"
+                                    placeholder="搜尋你的名字..."
+                                    className="flex-1 p-4 rounded-2xl border-none shadow-md outline-none focus:ring-2 focus:ring-red-500 text-lg"
                                     value={mobileSearch}
                                     onChange={e => setMobileSearch(e.target.value)}
                                 />
-                                <button 
-                                    onClick={() => setShowAddModal(true)}
-                                    className="bg-slate-800 text-white p-4 rounded-2xl shadow-md flex items-center gap-2"
-                                >
+                                <button onClick={() => setShowAddModal(true)} className="bg-slate-800 text-white px-4 rounded-2xl shadow-md flex items-center justify-center">
                                     <Icon name="user-plus" />
-                                    <span className="text-sm font-bold whitespace-nowrap">新學員</span>
                                 </button>
                             </div>
-
-                            <div className="grid gap-4">
-                                {sortedStudents.filter(s => !s.checkedIn && s.name.includes(mobileSearch)).map(s => (
+                            <div className="grid gap-3 pb-20">
+                                {sortedStudents.filter(s => !s.checkedIn && s.name.includes(mobileSearch)).slice(0, 50).map(s => (
                                     <button 
                                         key={s.id}
                                         onClick={async () => {
                                             if (confirm(`確認為 ${s.name} 簽到？`)) {
                                                 await toggleCheckin(s.id, true);
                                                 alert("簽到成功！OSU!");
+                                                setMobileSearch('');
                                             }
                                         }}
-                                        className="w-full text-left p-5 rounded-2xl bg-white shadow-sm border-2 border-white flex justify-between items-center active:scale-95 transition-all"
+                                        className="w-full text-left p-5 rounded-2xl bg-white shadow-sm flex justify-between items-center active:scale-95 transition-all border border-slate-100"
                                     >
                                         <div>
                                             <div className="font-bold text-lg text-slate-800">{s.name}</div>
-                                            <div className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded inline-block mt-1">{s.belt}</div>
+                                            <div className="text-xs font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded inline-block mt-1">{s.belt}</div>
                                         </div>
-                                        <Icon name="chevron-right" className="text-slate-300" />
+                                        <Icon name="check-circle" className="text-slate-200" />
                                     </button>
                                 ))}
                             </div>
-
-                            {sortedStudents.filter(s => !s.checkedIn && s.name.includes(mobileSearch)).length === 0 && (
-                                <div className="text-center py-10">
-                                    <p className="text-slate-400">找不到名字？請點擊右上角「新學員」報名</p>
-                                </div>
-                            )}
                         </div>
-
-                        {/* 手機報名彈窗 */}
                         {showAddModal && (
                             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 z-50">
                                 <div className="bg-white rounded-[2rem] w-full max-w-sm p-8 shadow-2xl scale-in">
-                                    <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Icon name="user-plus" className="text-red-600"/> 學員報名</h2>
+                                    <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Icon name="user-plus" className="text-red-600"/> 臨時報名</h2>
                                     <div className="space-y-4">
                                         <input type="text" placeholder="真實姓名" className="w-full p-4 bg-slate-50 rounded-xl border border-slate-200 outline-none focus:border-red-500" value={newName} onChange={e=>setNewName(e.target.value)} />
                                         <select className="w-full p-4 bg-slate-50 rounded-xl border border-slate-200" value={newBelt} onChange={e=>setNewBelt(e.target.value)}>
@@ -214,10 +291,8 @@
                                                     setNewName('');
                                                     alert("報名並簽到成功！");
                                                 }}
-                                                className="flex-1 bg-red-600 text-white py-4 rounded-xl font-bold shadow-lg"
-                                            >
-                                                確認加入
-                                            </button>
+                                                className="flex-1 bg-red-600 text-white py-4 rounded-xl font-bold"
+                                            >確認加入</button>
                                         </div>
                                     </div>
                                 </div>
@@ -227,73 +302,52 @@
                 );
             }
 
-            // --- 教練管理介面 (電腦端) ---
             return (
-                <div className="max-w-5xl mx-auto p-4 md:p-8 font-sans text-slate-800">
-                    <div className="flex bg-white rounded-2xl shadow-sm p-1.5 mb-8 border">
-                        <button onClick={() => setActiveTab('admin')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition ${activeTab === 'admin' ? 'bg-red-600 text-white' : 'text-slate-400'}`}>
-                            <Icon name="users" /> 教練管理
+                <div className="max-w-6xl mx-auto p-4 md:p-8 font-sans text-slate-800">
+                    <div className="flex bg-white rounded-2xl shadow-sm p-1.5 mb-8 border border-slate-200">
+                        <button onClick={() => setActiveTab('admin')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition ${activeTab === 'admin' ? 'bg-red-600 text-white shadow-md' : 'text-slate-400'}`}>
+                            <Icon name="users" /> 學員名單
                         </button>
-                        <button onClick={() => setActiveTab('checkin')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition ${activeTab === 'checkin' ? 'bg-red-600 text-white' : 'text-slate-400'}`}>
-                            <Icon name="qr-code" /> 簽到碼
+                        <button onClick={() => setActiveTab('checkin')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition ${activeTab === 'checkin' ? 'bg-red-600 text-white shadow-md' : 'text-slate-400'}`}>
+                            <Icon name="qr-code" /> 簽到 QR
                         </button>
                     </div>
 
                     {activeTab === 'admin' ? (
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                            {/* 左側控制欄 */}
-                            <div className="space-y-6">
-                                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                                    <h3 className="font-bold mb-5 flex items-center gap-2 text-red-600 text-lg"><Icon name="plus-circle" /> 快速加人</h3>
-                                    <div className="space-y-3">
-                                        <input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="姓名" className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:border-red-500" />
-                                        <select value={newBelt} onChange={e => setNewBelt(e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white">
-                                            {beltOrder.map(b => <option key={b} value={b}>{b}</option>)}
-                                        </select>
-                                        <button onClick={()=>{addStudent(newName, newBelt); setNewName('')}} className="w-full bg-slate-900 text-white py-2.5 rounded-xl font-bold hover:bg-black transition-colors">加入名單</button>
-                                    </div>
-                                </div>
-                                
-                                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                                    <h3 className="font-bold mb-4 flex items-center gap-2 text-slate-600"><Icon name="search" /> 搜尋學員</h3>
-                                    <input type="text" placeholder="輸入關鍵字..." className="w-full px-4 py-2.5 rounded-xl border border-slate-200 mb-4" onChange={e => setSearchTerm(e.target.value)} />
-                                    <div className="flex items-center justify-between text-sm bg-slate-50 p-3 rounded-xl">
-                                        <span className="font-bold text-slate-500">顯示全體</span>
-                                        <button onClick={() => setShowAll(!showAll)} className={`w-10 h-5 rounded-full relative transition-colors ${showAll ? 'bg-red-500' : 'bg-slate-300'}`}>
-                                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm transition-all ${showAll ? 'left-6' : 'left-1'}`} />
+                        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                            <div className="lg:col-span-1 space-y-6">
+                                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 sticky top-8">
+                                    <h3 className="font-bold mb-4 flex items-center gap-2 text-slate-600"><Icon name="search" /> 篩選名單</h3>
+                                    <input type="text" placeholder="輸入姓名搜尋..." className="w-full px-4 py-3 rounded-xl border border-slate-200 mb-4 outline-none focus:border-red-500" onChange={e => setSearchTerm(e.target.value)} />
+                                    <div className="flex items-center justify-between text-sm bg-slate-50 p-4 rounded-xl mb-4">
+                                        <span className="font-bold text-slate-500">只顯示已簽到</span>
+                                        <button onClick={() => setShowAll(!showAll)} className={`w-10 h-5 rounded-full relative transition-colors ${!showAll ? 'bg-green-500' : 'bg-slate-300'}`}>
+                                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm transition-all ${!showAll ? 'left-6' : 'left-1'}`} />
                                         </button>
+                                    </div>
+                                    <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                                        <div className="text-xs text-blue-500 font-bold mb-1 uppercase tracking-wider">今日出勤率</div>
+                                        <div className="text-2xl font-black text-blue-700">{students.filter(s=>s.checkedIn).length} / {students.length}</div>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* 右側列表 */}
-                            <div className="lg:col-span-2 space-y-6">
+                            <div className="lg:col-span-3 space-y-6">
                                 <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-                                    <div className="p-6 border-b flex justify-between items-center bg-white sticky top-0 z-10">
-                                        <div>
-                                            <h2 className="font-bold text-xl">雲端名單 ({students.length})</h2>
-                                            <div className="flex items-center gap-1 text-green-500 text-[10px] mt-1 uppercase font-black tracking-widest">
-                                                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-ping"></div>
-                                                Cloud Connected
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <Icon name="refresh-cw" size={18} className="text-slate-300 cursor-pointer" onClick={()=>window.location.reload()} />
-                                        </div>
-                                    </div>
-                                    <div className="max-h-[500px] overflow-y-auto">
+                                    <div className="max-h-[600px] overflow-y-auto">
                                         <table className="w-full text-left text-sm">
                                             <thead className="bg-slate-50 text-slate-400 font-bold sticky top-0 z-10">
                                                 <tr>
                                                     <th className="px-6 py-4">狀態</th>
-                                                    <th className="px-6 py-4">姓名</th>
+                                                    <th className="px-6 py-4 text-base">姓名</th>
                                                     <th className="px-6 py-4">級數</th>
-                                                    <th className="px-6 py-4">出席次</th>
+                                                    <th className="px-6 py-4 text-center">出席次數</th>
+                                                    <th className="px-6 py-4 text-center">操作</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
                                                 {sortedStudents.filter(s => (showAll || s.checkedIn) && s.name.includes(searchTerm)).map(s => (
-                                                    <tr key={s.id} className="hover:bg-slate-50/50 transition">
+                                                    <tr key={s.id} className={`hover:bg-slate-50 transition ${s.checkedIn ? 'bg-green-50/30' : ''}`}>
                                                         <td className="px-6 py-4">
                                                             <button 
                                                                 onClick={() => toggleCheckin(s.id, !s.checkedIn)}
@@ -302,39 +356,35 @@
                                                                 {s.checkedIn ? '已簽到' : '未簽到'}
                                                             </button>
                                                         </td>
-                                                        <td className="px-6 py-4 font-bold text-slate-700">{s.name}</td>
+                                                        <td className="px-6 py-4 font-bold text-slate-700 text-base">{s.name}</td>
                                                         <td className="px-6 py-4">
                                                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${s.belt.includes('段') ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>{s.belt}</span>
                                                         </td>
-                                                        <td className="px-6 py-4 font-mono font-bold text-lg text-blue-600">{s.attendanceCount}</td>
+                                                        <td className="px-6 py-4 font-mono font-bold text-center text-lg text-blue-600">{s.attendanceCount || 0}</td>
+                                                        <td className="px-6 py-4 text-center">
+                                                            <button onClick={() => deleteStudent(s.id)} className="text-slate-200 hover:text-red-500 transition-colors"><Icon name="trash-2" size={16}/></button>
+                                                        </td>
                                                     </tr>
                                                 ))}
                                             </tbody>
                                         </table>
                                     </div>
                                 </div>
-                                <button onClick={finishSession} className="w-full bg-blue-600 text-white py-5 rounded-3xl font-bold text-lg shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all active:scale-95">
-                                    結束今日課堂並結算數據
-                                </button>
-                                <p className="text-center text-xs text-slate-400">數據將即時同步至所有已連網設備</p>
+                                <div className="flex gap-4">
+                                    <button onClick={finishSession} className="flex-1 bg-blue-600 text-white py-5 rounded-3xl font-bold text-lg shadow-xl hover:bg-blue-700 transition-all active:scale-95 flex items-center justify-center gap-3">
+                                        <Icon name="save" /> 結束今日課堂並結算
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     ) : (
                         <div className="bg-white rounded-[3.5rem] shadow-xl border-8 border-red-50 p-10 md:p-20 flex flex-col items-center text-center max-w-2xl mx-auto">
-                            <h2 className="text-4xl font-black text-slate-800 mb-4 italic tracking-tight">道場雲端簽到 QR</h2>
-                            <p className="text-slate-400 mb-10 font-medium">請學員掃描進入，若名單無名可自行報名。</p>
-                            
+                            <h2 className="text-4xl font-black text-slate-800 mb-4 italic tracking-tight">道場簽到 QR</h2>
+                            <p className="text-slate-400 mb-10 font-medium leading-relaxed">請學員掃描進入系統簽到。<br/>若名單無名，請點擊手機右上角「＋」報名。</p>
                             <div className="p-8 bg-white rounded-[3rem] shadow-2xl shadow-red-100 border border-slate-50">
                                 <img src={qrSrc} alt="QR Code" className="w-64 h-64" />
                             </div>
-                            
-                            <div className="mt-10 p-5 bg-amber-50 rounded-2xl border border-amber-100 text-amber-700 text-sm text-left flex gap-3">
-                                <Icon name="shield-check" className="shrink-0 mt-1" />
-                                <div>
-                                    <strong>雲端同步提醒：</strong>
-                                    此 QR Code 指向的是您的專屬網頁。建議將網頁加入手機主螢幕書籤，下次上課直接打開即可。
-                                </div>
-                            </div>
+                            <div className="mt-8 text-xs text-slate-300 font-mono tracking-widest uppercase">OSS! Karate Management System</div>
                         </div>
                     )}
                 </div>
@@ -347,6 +397,10 @@
     <style>
         @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .scale-in { animation: scaleIn 0.3s ease-out forwards; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
     </style>
 </body>
 </html>
